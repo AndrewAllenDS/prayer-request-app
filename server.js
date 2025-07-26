@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
@@ -8,7 +6,7 @@ const fs = require('fs');
 const PDFDocument = require('pdfkit');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Database setup
 const db = new sqlite3.Database('./database.db');
@@ -21,11 +19,10 @@ db.serialize(() => {
   )`);
 });
 
-// Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static('public')); // Serves index.html and calendar.html
+app.use(express.static('public'));
 
-// Handle form submissions
+// Handle prayer submission
 app.post('/submit', (req, res) => {
   const { name, request, date } = req.body;
   const finalName = name.trim() === '' ? 'Anonymous' : name;
@@ -35,26 +32,22 @@ app.post('/submit', (req, res) => {
     [finalName, request, date],
     (err) => {
       if (err) {
-        console.error('Error inserting into DB:', err);
-        return res.send('Error saving your prayer.');
+        return res.send('Error saving prayer.');
       }
       res.send(`<p>Thank you for your prayer. <a href="/">Submit another</a></p>`);
     }
   );
 });
 
-// Download all prayer requests as PDF
+// Route to download all prayers as PDF
 app.get('/download', (req, res) => {
   db.all(`SELECT * FROM prayers ORDER BY date`, [], (err, rows) => {
-    if (err) {
-      console.error('DB fetch error:', err);
-      return res.status(500).send('Error generating PDF');
-    }
+    if (err) return res.status(500).send('Error generating PDF');
 
     const doc = new PDFDocument();
     const filePath = path.join(__dirname, 'prayer_requests.pdf');
-    const writeStream = fs.createWriteStream(filePath);
-    doc.pipe(writeStream);
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
 
     doc.fontSize(18).text('Prayer Requests', { align: 'center' });
     doc.moveDown();
@@ -67,36 +60,13 @@ app.get('/download', (req, res) => {
 
     doc.end();
 
-    writeStream.on('finish', () => {
-      res.download(filePath, 'prayer_requests.pdf', (err) => {
-        if (err) {
-          console.error('Download error:', err);
-          res.status(500).send('Error sending the PDF.');
-        }
-      });
+    stream.on('finish', () => {
+      res.download(filePath);
     });
   });
 });
 
-// Calendar events endpoint
-app.get('/events', (req, res) => {
-  db.all(`SELECT * FROM prayers`, [], (err, rows) => {
-    if (err) {
-      console.error('Error fetching events:', err);
-      return res.status(500).json([]);
-    }
-
-    const events = rows.map((row) => ({
-      title: row.name === 'Anonymous' ? 'Prayer' : `${row.name}`,
-      date: row.date,
-      description: row.request
-    }));
-
-    res.json(events);
-  });
-});
-
-// Start the server
+// Start server
 app.listen(PORT, () => {
-  console.log(`✅ Server is running at http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
